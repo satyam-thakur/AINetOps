@@ -7,13 +7,13 @@ variable "aws_region" {
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "t4g.xlarge"
+  default     = "t3a.xlarge"
 }
 
 variable "ami_id" {
   description = "AMI ID"
   type        = string
-  default     = "ami-0bca608fe0242d666"
+  default     = "ami-065778886ef8ec7c8"
 }
 
 variable "volume_size" {
