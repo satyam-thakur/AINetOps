@@ -3,12 +3,10 @@ name: srlceos01
 topology:
   nodes:
     node1:
-      # node1 is of nokia_srlinux kind
       kind: nokia_srlinux
       type: ixr-d2l
       image: ghcr.io/nokia/srlinux
     node2:
-      # node2 is of arista_ceos kind
       kind: arista_ceos
       image: ceos:4.32.0F
 
