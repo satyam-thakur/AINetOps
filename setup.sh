@@ -22,22 +22,21 @@ echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://
 sudo apt-get update -y
 sudo apt-get install -y terraform
 
+# Install Containerlab
+echo "Installing Containerlab..."
+curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"
+
 # # Install Docker
 # echo "Installing Docker..."
 # curl -fsSL https://get.docker.com | sudo sh
 
 # # Configure Docker permissions
-# sudo usermod -aG docker $USER
-# newgrp docker
-# sudo systemctl restart docker.services
-# wait
-
-# Install Containerlab
-echo "Installing Containerlab..."
-curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"
-
+sudo usermod -aG docker $USER
+newgrp docker
+sudo systemctl restart docker.services
+wait
 # Restart Docker
-sudo systemctl restart docker.service
+# sudo systemctl restart docker.service
 
 echo ""
 echo "Installation complete!"
