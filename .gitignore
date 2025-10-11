@@ -1,5 +1,6 @@
 *.terraform.lock.hcl
 *.terraform/
 *.tfstate*
-*.tfvars
-*.txt
+# *.tfvars
+*.env
+*clab-*
