@@ -10,10 +10,11 @@ topology:
       kind: nokia_srlinux
       type: ixr-d2l
       image: ghcr.io/nokia/srlinux
-    # ceos:
-    #   kind: arista_ceos
-    #   image: ceos:4.32.0F
+    ceos:
+      kind: arista_ceos
+      image: ceos:4.32.0F
 
   links:
     - endpoints: ["srl1:e1-1", "srl2:e1-1"]
-    # - endpoints: ["srl1:e1-2", "ceos:eth1"]
+    - endpoints: ["srl1:e1-2", "ceos:eth1"]
+    - endpoints: ["ceos:eth2", "srl2:e1-3"]
