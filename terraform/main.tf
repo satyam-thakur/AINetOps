@@ -7,13 +7,28 @@ resource "aws_security_group" "network_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Change to specific IP for better security
+    cidr_blocks = ["0.0.0.0/0"] # Change to specific IP for better security
   }
 
   ingress {
     from_port   = 50080
     to_port     = 50080
     protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Enabling all incoming traffic for test
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
