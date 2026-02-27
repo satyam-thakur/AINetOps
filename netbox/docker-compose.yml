@@ -1,0 +1,112 @@
+# -------------------------------------------------------------------
+# NetBox Docker Compose — AIOps Source of Truth
+# -------------------------------------------------------------------
+# Based on official netbox-docker project
+# Start: docker compose up -d
+# Access: http://localhost:8000
+# Default login: admin / admin (set in .env)
+# -------------------------------------------------------------------
+
+services:
+  # -----------------------------------------------------------------
+  # NetBox Application
+  # -----------------------------------------------------------------
+  netbox:
+    image: netboxcommunity/netbox:v4.2
+    container_name: aiops-netbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      redis-cache:
+        condition: service_started
+    env_file:
+      - .env
+    ports:
+      - "8000:8080"
+    volumes:
+      - netbox-media:/opt/netbox/netbox/media
+      - netbox-reports:/opt/netbox/netbox/reports
+      - netbox-scripts:/opt/netbox/netbox/scripts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # NetBox Worker (background tasks)
+  # -----------------------------------------------------------------
+  netbox-worker:
+    image: netboxcommunity/netbox:v4.2
+    container_name: aiops-netbox-worker
+    depends_on:
+      netbox:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # NetBox Housekeeping (cleanup old sessions, changelog, etc.)
+  # -----------------------------------------------------------------
+  netbox-housekeeping:
+    image: netboxcommunity/netbox:v4.2
+    container_name: aiops-netbox-housekeeping
+    depends_on:
+      netbox:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: /opt/netbox/housekeeping.sh
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # PostgreSQL Database
+  # -----------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: aiops-netbox-postgres
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-netbox_dev_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netbox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # Redis (task queue)
+  # -----------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: aiops-netbox-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # Redis Cache
+  # -----------------------------------------------------------------
+  redis-cache:
+    image: redis:7-alpine
+    container_name: aiops-netbox-redis-cache
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  netbox-media:
+  netbox-reports:
+  netbox-scripts:
