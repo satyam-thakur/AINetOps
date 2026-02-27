@@ -1,20 +1,21 @@
-name: test_network
+name: aiops-lab
 
 topology:
+  defaults:
+    kind: nokia_srlinux
+
+  kinds:
+    nokia_srlinux:
+      image: ghcr.io/nokia/srlinux:latest
+
   nodes:
-    srl1:
-      kind: nokia_srlinux
+    spine1:
+      type: ixr-d3l
+      startup-config: configs/startup-spine1.json
+
+    leaf1:
       type: ixr-d2l
-      image: ghcr.io/nokia/srlinux
-    srl2:
-      kind: nokia_srlinux
-      type: ixr-d2l
-      image: ghcr.io/nokia/srlinux
-    ceos:
-      kind: arista_ceos
-      image: ceos:4.32.0F
+      startup-config: configs/startup-leaf1.json
 
   links:
-    - endpoints: ["srl1:e1-1", "srl2:e1-1"]
-    - endpoints: ["srl1:e1-2", "ceos:eth1"]
-    - endpoints: ["ceos:eth2", "srl2:e1-3"]
+    - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
