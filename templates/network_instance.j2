@@ -1,6 +1,0 @@
-{# -----------------------------------------------------------------
-   Nokia SR Linux — Network Instance Configuration
-   Adds an interface to the default network instance
-   ----------------------------------------------------------------- #}
-set / network-instance {{ network_instance | default("default") }} admin-state enable
-set / network-instance {{ network_instance | default("default") }} interface {{ interface_name }}.{{ subinterface_index | default(1) }}
