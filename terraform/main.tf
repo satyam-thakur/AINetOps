@@ -17,6 +17,13 @@ resource "aws_security_group" "network_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"] # Change to specific IP for better security, This is for test only.
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

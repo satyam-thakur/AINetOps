@@ -192,6 +192,9 @@ def push_configs(configs):
                     if line and not line.startswith("{#"):
                         all_commands.append(line)
 
+            # Enter candidate mode (required for SR Linux set commands)
+            connection.send_command("enter candidate", expect_string=r"#")
+
             # Send commands
             for cmd in all_commands:
                 output = connection.send_command(cmd, expect_string=r"#")
@@ -235,7 +238,9 @@ def verify_state(intent):
 
             for iface in dev["interfaces"]:
                 # Query actual interface state
-                cmd = f"info from state interface {iface['name']} subinterface 1 ipv4 address"
+                # Note: 'ipv4 address' fails on SR Linux because address is
+                # a keyed list requiring ip-prefix. Query 'ipv4' instead.
+                cmd = f"info from state interface {iface['name']} subinterface 1 ipv4"
                 output = connection.send_command(cmd)
 
                 intended_ip = iface["ip_address"]
@@ -329,12 +334,10 @@ def main():
     )
     args = parser.parse_args()
 
-    console.print("[bold magenta]")
-    console.print("╔═══════════════════════════════════════════════════════════╗")
-    console.print("║   AIOps — Phase 1: Intent-Driven Configuration Executor  ║")
-    console.print("║   NetBox → Jinja2 → Netmiko → Verify                     ║")
-    console.print("╚═══════════════════════════════════════════════════════════╝")
-    console.print("[/]")
+    console.print("╔═══════════════════════════════════════════════════════════╗", style="bold magenta")
+    console.print("║   AIOps — Phase 1: Intent-Driven Configuration Executor  ║", style="bold magenta")
+    console.print("║   NetBox → Jinja2 → Netmiko → Verify                     ║", style="bold magenta")
+    console.print("╚═══════════════════════════════════════════════════════════╝", style="bold magenta")
 
     # Connect to NetBox
     nb = pynetbox.api(NETBOX_URL, token=NETBOX_TOKEN)
