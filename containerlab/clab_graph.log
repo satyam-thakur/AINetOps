@@ -1,0 +1,12 @@
+nohup: ignoring input
+17:42:17 INFO Parsing & checking topology file=topology.clab.yaml
+17:42:17 INFO Serving topology graph
+  addresses=
+  │   http://172.31.20.150:50080
+  │   http://172.18.0.1:50080
+  │   http://172.17.0.1:50080
+  │   http://172.20.20.1:50080
+  │   http://172.19.0.1:50080
+  │   http://[3fff:172:20:20::1]:50080
+
+19:34:59 ERRO received signal "terminated", canceling context

@@ -1,0 +1,18 @@
+device:
+  hostname: spine1
+  type: ixr-d3l
+  role: spine
+  interfaces:
+    - name: ethernet-1/1
+      description: "to leaf1 e1-1"
+      subinterface_index: 1
+      ipv4: 10.0.0.0/31
+      network_instance: default
+    - name: ethernet-1/2
+      description: "to leaf2 e1-1"
+      subinterface_index: 1
+      ipv4: 10.0.0.2/31
+      network_instance: default
+  network_instances:
+    - name: default
+      admin_state: enable

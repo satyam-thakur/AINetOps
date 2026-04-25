@@ -1,0 +1,13 @@
+device:
+  hostname: leaf2
+  type: ixr-d2l
+  role: leaf
+  interfaces:
+    - name: ethernet-1/1
+      description: "to spine1 e1-2"
+      subinterface_index: 1
+      ipv4: 10.0.0.3/31
+      network_instance: default
+  network_instances:
+    - name: default
+      admin_state: enable

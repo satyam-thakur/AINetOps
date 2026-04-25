@@ -1,0 +1,55 @@
+# -------------------------------------------------------------------
+# AIOps — Git Ignore
+# -------------------------------------------------------------------
+
+# ── Containerlab runtime ──
+*clab-*/
+
+# ── Generated configs (compiled output) ──
+configs/generated/
+
+# ── Terraform ──
+*.terraform.lock.hcl
+*.terraform/
+*.tfstate*
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ── Environment / Secrets ──
+*.env
+!.env.example
+# !netbox/.env
+
+# ── MCP Servers (cloned repos) ──
+mcp-servers/*
+!mcp-servers/executor_mcp/
+
+# ── Docker volumes (if bind-mounted) ──
+netbox/postgres_data/
+netbox/redis_data/
+
+# ── Memory bank (project context) ──
+# *memory-bank/
+
+# ── IDE ──
+# .vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Agent ──
+# .agent/
+# .specify/
+
+# -- Misc --
+netbox-docker/

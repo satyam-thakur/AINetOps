@@ -1,0 +1,54 @@
+# gNMIc Configuration — AINetOps Lab
+# Streams telemetry from Nokia SR Linux containerlab nodes
+# Reference: https://gnmic.openconfig.net/
+
+username: admin
+password: NokiaSrl1!
+encoding: json_ietf
+skip-verify: true
+log: true
+
+targets:
+  clab-aiops-lab-spine1:
+    address: clab-aiops-lab-spine1:57400
+  clab-aiops-lab-leaf1:
+    address: clab-aiops-lab-leaf1:57400
+  clab-aiops-lab-leaf2:
+    address: clab-aiops-lab-leaf2:57400
+
+subscriptions:
+  interfaces:
+    paths:
+      - /interface/statistics
+      - /interface/subinterface/statistics
+      - /interface/oper-state
+    mode: stream
+    stream-mode: sample
+    sample-interval: 10s
+
+  system:
+    paths:
+      - /system/information
+      - /platform/control/cpu
+      - /platform/control/memory
+    mode: stream
+    stream-mode: sample
+    sample-interval: 30s
+
+  network-instance:
+    paths:
+      - /network-instance/protocols/bgp/neighbor/session-state
+      - /network-instance/route-table/ipv4-unicast/statistics
+    mode: stream
+    stream-mode: sample
+    sample-interval: 10s
+
+outputs:
+  prometheus-output:
+    type: prometheus
+    listen: ":9804"
+    path: /metrics
+    metric-prefix: gnmic
+    append-subscription-name: true
+    export-timestamps: true
+    strings-as-labels: true
