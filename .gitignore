@@ -39,6 +39,10 @@ netbox/redis_data/
 
 # ── IDE ──
 # .vscode/
+*memory-bank/
+
+# ── IDE ──
+.vscode/
 .idea/
 *.swp
 *.swo
@@ -53,3 +57,4 @@ Thumbs.db
 
 # -- Misc --
 netbox-docker/
+Thumbs.db

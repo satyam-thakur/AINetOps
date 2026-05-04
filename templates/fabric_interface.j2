@@ -1,0 +1,8 @@
+{# -----------------------------------------------------------------
+   Nokia SR Linux — Fabric Interface Configuration
+   Rendered from NetBox IPAM data by executor.py
+   ----------------------------------------------------------------- #}
+set / interface {{ interface_name }} admin-state enable
+set / interface {{ interface_name }} description "{{ description }}"
+set / interface {{ interface_name }} subinterface {{ subinterface_index | default(1) }} ipv4 admin-state enable
+set / interface {{ interface_name }} subinterface {{ subinterface_index | default(1) }} ipv4 address {{ ip_address }}
