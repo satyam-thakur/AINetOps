@@ -18,6 +18,405 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
 
+ensure_local_paths() {
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+    if [[ ":$PATH:" != *":$HOME/.local/npm/bin:"* ]]; then
+        export PATH="$HOME/.local/npm/bin:$PATH"
+    fi
+}
+
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command_exists sudo; then
+        sudo "$@"
+    else
+        log_error "sudo not available. Run as root to install packages."
+        return 1
+    fi
+}
+
+detect_pkg_manager() {
+    if command_exists apt-get; then
+        echo "apt"
+    elif command_exists dnf; then
+        echo "dnf"
+    elif command_exists yum; then
+        echo "yum"
+    elif command_exists pacman; then
+        echo "pacman"
+    elif command_exists zypper; then
+        echo "zypper"
+    else
+        echo ""
+    fi
+}
+
+APT_UPDATED=0
+APT_OPTS=(
+    -o Acquire::ForceIPv4=true
+    -o Acquire::Retries=3
+    -o Acquire::http::Timeout=20
+    -o Acquire::https::Timeout=20
+)
+APT_MIRROR_CHECKED=0
+APT_SECURITY_MIRROR="http://us-west-2.ec2.archive.ubuntu.com/ubuntu"
+NODE_REQUIRED_MAJOR=22
+NODE_SETUP_URL="https://deb.nodesource.com/setup_22.x"
+SKIPPED_ITEMS=()
+DEFAULT_INSTALL_YES=1
+
+confirm_install() {
+    local label="$1"
+    local reply
+    while true; do
+        if [ "$DEFAULT_INSTALL_YES" -eq 1 ]; then
+            read -r -p "Install ${label}? [Y/n] " reply
+        else
+            read -r -p "Install ${label}? [y/N] " reply
+        fi
+        case "$reply" in
+            [yY]|[yY][eE][sS])
+                return 0
+                ;;
+            [nN]|[nN][oO])
+                return 1
+                ;;
+            "")
+                if [ "$DEFAULT_INSTALL_YES" -eq 1 ]; then
+                    return 0
+                fi
+                return 1
+                ;;
+            *)
+                echo "Please answer y or n."
+                ;;
+        esac
+    done
+}
+
+confirm_action() {
+    local prompt="$1"
+    local reply
+    while true; do
+        if [ "$DEFAULT_INSTALL_YES" -eq 1 ]; then
+            read -r -p "${prompt} [Y/n] " reply
+        else
+            read -r -p "${prompt} [y/N] " reply
+        fi
+        case "$reply" in
+            [yY]|[yY][eE][sS])
+                return 0
+                ;;
+            [nN]|[nN][oO])
+                return 1
+                ;;
+            "")
+                if [ "$DEFAULT_INSTALL_YES" -eq 1 ]; then
+                    return 0
+                fi
+                return 1
+                ;;
+            *)
+                echo "Please answer y or n."
+                ;;
+        esac
+    done
+}
+
+ensure_apt_security_mirror() {
+    if [ "$APT_MIRROR_CHECKED" -eq 1 ]; then
+        return 0
+    fi
+    APT_MIRROR_CHECKED=1
+
+    if ! command_exists curl; then
+        return 0
+    fi
+
+    if curl -fsS --max-time 5 "http://security.ubuntu.com/ubuntu/dists/jammy/InRelease" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log_warn "security.ubuntu.com appears slow or unreachable."
+    if confirm_action "Switch security mirror to ${APT_SECURITY_MIRROR}?"; then
+        local old_shopt
+        old_shopt=$(shopt -p nullglob)
+        shopt -s nullglob
+        local files=(/etc/apt/sources.list /etc/apt/sources.list.d/*.list)
+        eval "$old_shopt"
+        if [ "${#files[@]}" -gt 0 ]; then
+            as_root sed -i "s|http://security.ubuntu.com/ubuntu|${APT_SECURITY_MIRROR}|g" "${files[@]}" || return 1
+            log_info "Updated security mirror to ${APT_SECURITY_MIRROR}"
+        fi
+    fi
+    return 0
+}
+
+add_skipped() {
+    local label="$1"
+    SKIPPED_ITEMS+=("$label")
+}
+
+install_packages() {
+    local pm="$1"
+    shift
+    local pkgs=("$@")
+
+    if [ "${#pkgs[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    case "$pm" in
+        apt)
+            if [ "$APT_UPDATED" -eq 0 ]; then
+                ensure_apt_security_mirror || return 1
+                as_root apt-get "${APT_OPTS[@]}" update || return 1
+                APT_UPDATED=1
+            fi
+            as_root apt-get "${APT_OPTS[@]}" install -y "${pkgs[@]}" || return 1
+            ;;
+        dnf)
+            as_root dnf install -y "${pkgs[@]}" || return 1
+            ;;
+        yum)
+            as_root yum install -y "${pkgs[@]}" || return 1
+            ;;
+        pacman)
+            as_root pacman -Sy --noconfirm "${pkgs[@]}" || return 1
+            ;;
+        zypper)
+            as_root zypper --non-interactive install "${pkgs[@]}" || return 1
+            ;;
+        *)
+            log_error "No supported package manager found."
+            return 1
+            ;;
+    esac
+}
+
+remove_packages() {
+    local pm="$1"
+    shift
+    local pkgs=("$@")
+
+    if [ "${#pkgs[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    case "$pm" in
+        apt)
+            as_root apt-get "${APT_OPTS[@]}" remove -y "${pkgs[@]}" || return 1
+            ;;
+        dnf)
+            as_root dnf remove -y "${pkgs[@]}" || return 1
+            ;;
+        yum)
+            as_root yum remove -y "${pkgs[@]}" || return 1
+            ;;
+        pacman)
+            as_root pacman -Rns --noconfirm "${pkgs[@]}" || return 1
+            ;;
+        zypper)
+            as_root zypper --non-interactive remove "${pkgs[@]}" || return 1
+            ;;
+        *)
+            log_error "No supported package manager found."
+            return 1
+            ;;
+    esac
+}
+
+ensure_command() {
+    local cmd="$1"
+    local pm="$2"
+    shift 2
+    local pkgs=("$@")
+
+    if command_exists "$cmd"; then
+        log_info "$cmd found: $(command -v "$cmd")"
+        return 0
+    fi
+
+    log_warn "$cmd not found. Installing: ${pkgs[*]}"
+    if ! confirm_install "${pkgs[*]}"; then
+        log_warn "Skipping install: ${pkgs[*]}"
+        add_skipped "${pkgs[*]}"
+        return 2
+    fi
+    if ! install_packages "$pm" "${pkgs[@]}"; then
+        log_error "Failed to install: ${pkgs[*]}"
+        return 1
+    fi
+
+    if command_exists "$cmd"; then
+        log_info "$cmd found: $(command -v "$cmd")"
+        return 0
+    fi
+
+    log_error "$cmd not found after install"
+    return 1
+}
+
+ensure_node() {
+    local pm="$1"
+    local node_major
+    local need_install=1
+
+    if command_exists node; then
+        node_major=$(node --version | sed 's/v//' | cut -d. -f1)
+        if [ "$node_major" -ge "$NODE_REQUIRED_MAJOR" ]; then
+            need_install=0
+        else
+            log_warn "Node.js ${NODE_REQUIRED_MAJOR}+ required. Found: $(node --version)"
+            if confirm_install "remove Node.js ${node_major}"; then
+                if ! remove_packages "$pm" nodejs npm; then
+                    log_error "Failed to remove old Node.js packages"
+                    return 1
+                fi
+            else
+                log_warn "Skipping removal of old Node.js"
+                add_skipped "remove Node.js ${node_major}"
+                return 2
+            fi
+        fi
+    fi
+
+    if [ "$need_install" -eq 1 ]; then
+        log_warn "Installing Node.js >= ${NODE_REQUIRED_MAJOR}..."
+        if ! confirm_install "Node.js ${NODE_REQUIRED_MAJOR}+"; then
+            log_warn "Skipping install: Node.js ${NODE_REQUIRED_MAJOR}+"
+            add_skipped "Node.js ${NODE_REQUIRED_MAJOR}+"
+            return 2
+        fi
+        if [ "$pm" = "apt" ]; then
+            install_packages "$pm" curl ca-certificates gnupg || return 1
+            curl -fsSL "$NODE_SETUP_URL" | as_root bash - &> /dev/null || {
+                log_error "Failed to configure NodeSource repo for Node.js ${NODE_REQUIRED_MAJOR}."
+                return 1
+            }
+            install_packages "$pm" nodejs || return 1
+        else
+            install_packages "$pm" nodejs npm || return 1
+        fi
+    fi
+
+    if ! command_exists node; then
+        log_error "Node.js not found after installation."
+        return 1
+    fi
+
+    node_major=$(node --version | sed 's/v//' | cut -d. -f1)
+    if [ "$node_major" -lt "$NODE_REQUIRED_MAJOR" ]; then
+        log_error "Node.js >= ${NODE_REQUIRED_MAJOR} required. Found: $(node --version)"
+        return 1
+    fi
+
+    if ! command_exists npm; then
+        if confirm_install "npm"; then
+            install_packages "$pm" npm || return 1
+        else
+            log_warn "Skipping install: npm"
+            add_skipped "npm"
+            return 2
+        fi
+    fi
+
+    if ! command_exists npx; then
+        if confirm_install "npx"; then
+            install_packages "$pm" npm || return 1
+        else
+            log_warn "Skipping install: npx"
+            add_skipped "npx"
+            return 2
+        fi
+    fi
+
+    log_info "Node.js version: $(node --version)"
+    log_info "npm found: $(command -v npm)"
+    log_info "npx found: $(command -v npx)"
+    return 0
+}
+
+ensure_uvx() {
+    ensure_local_paths
+    if command_exists uv && command_exists uvx; then
+        log_info "uv found: $(command -v uv)"
+        log_info "uvx found: $(command -v uvx)"
+        return 0
+    fi
+
+    if ! confirm_install "uv/uvx"; then
+        log_warn "Skipping install: uv/uvx"
+        add_skipped "uv/uvx"
+        return 2
+    fi
+
+    log_warn "uv not found — installing..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null || {
+        log_error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
+        return 1
+    }
+
+    export PATH="$HOME/.local/bin:$PATH"
+    if command_exists uv && command_exists uvx; then
+        log_info "uv found: $(command -v uv)"
+        log_info "uvx found: $(command -v uvx)"
+        return 0
+    fi
+
+    log_error "uv/uvx not found after install"
+    return 1
+}
+
+ensure_docker() {
+    local pm="$1"
+    if command_exists docker; then
+        log_info "Docker found: $(command -v docker)"
+        return 0
+    fi
+
+    if ! confirm_install "docker"; then
+        log_warn "Skipping install: docker"
+        add_skipped "docker"
+        return 2
+    fi
+
+    log_warn "Docker not found — installing..."
+    case "$pm" in
+        apt)
+            install_packages "$pm" docker.io || return 1
+            ;;
+        dnf|yum)
+            install_packages "$pm" docker || return 1
+            ;;
+        pacman)
+            install_packages "$pm" docker || return 1
+            ;;
+        zypper)
+            install_packages "$pm" docker || return 1
+            ;;
+        *)
+            log_error "No supported package manager found for Docker install."
+            return 1
+            ;;
+    esac
+
+    if command_exists docker; then
+        log_info "Docker installed: $(command -v docker)"
+        return 0
+    fi
+
+    log_error "Docker not found after install"
+    return 1
+}
+
 check_command() {
     if command -v "$1" &> /dev/null; then
         log_info "$1 found: $(command -v "$1")"
@@ -43,6 +442,8 @@ AIOPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MCP_DIR="$AIOPS_DIR/mcp-servers"
 TOTAL_STEPS=14
 
+ensure_local_paths
+
 echo "========================================="
 echo "  AINetOps — Full Installation"
 echo "  OpenClaw + MCP Servers (via uvx)"
@@ -57,72 +458,97 @@ echo ""
 
 log_step "1/$TOTAL_STEPS Checking prerequisites..."
 
-MISSING=0
-
-# Node.js
-if ! check_command node; then
-    log_error "Node.js is required (>= 18). Install from https://nodejs.org/"
-    MISSING=1
-else
-    NODE_VERSION=$(node --version | sed 's/v//' | cut -d. -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        log_error "Node.js >= 18 required. Found: $(node --version)"
-        MISSING=1
-    else
-        log_info "Node.js version: $(node --version)"
-    fi
+PKG_MGR="$(detect_pkg_manager)"
+if [ -z "$PKG_MGR" ]; then
+    log_error "No supported package manager found (apt-get, dnf, yum, pacman, zypper)."
+    exit 1
 fi
 
-for cmd in npm npx python3 git; do
-    if ! check_command "$cmd"; then
-        MISSING=1
-    fi
-done
+MISSING=0
+OPENCLAW_OK=1
+SKIPPED=0
+
+# Base tools
+ensure_command curl "$PKG_MGR" curl ca-certificates; rc=$?
+if [ "$rc" -eq 1 ]; then
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
+fi
+
+ensure_command python3 "$PKG_MGR" python3; rc=$?
+if [ "$rc" -eq 1 ]; then
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
+fi
+
+ensure_command git "$PKG_MGR" git; rc=$?
+if [ "$rc" -eq 1 ]; then
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
+fi
 
 # pip
-if ! check_command pip3; then
-    if ! check_command pip; then
+ensure_command pip3 "$PKG_MGR" python3-pip; rc=$?
+if [ "$rc" -eq 1 ]; then
+    if ! command_exists pip; then
         log_error "pip3 is required for Python package installation"
         MISSING=1
     fi
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
+fi
+
+# Node.js + npm/npx
+ensure_node "$PKG_MGR"; rc=$?
+if [ "$rc" -eq 1 ]; then
+    OPENCLAW_OK=0
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    OPENCLAW_OK=0
+    SKIPPED=1
+    MISSING=1
 fi
 
 # uv / uvx
-if ! check_command uv; then
-    log_warn "uv not found — installing..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null || {
-        log_error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
-        MISSING=1
-    }
-    # Source the new PATH
-    export PATH="$HOME/.local/bin:$PATH"
-    if check_command uv; then
-        log_info "uv installed successfully"
-    else
-        log_error "uv still not found after install"
-        MISSING=1
-    fi
+ensure_uvx; rc=$?
+if [ "$rc" -eq 1 ]; then
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
 fi
 
-if ! check_command uvx; then
-    log_warn "uvx not found on PATH (should be installed with uv)"
-    log_info "Trying: export PATH=\"\$HOME/.local/bin:\$PATH\""
-    export PATH="$HOME/.local/bin:$PATH"
-fi
-
-# Docker (optional, for GitHub MCP)
-if check_command docker; then
-    log_info "Docker available (used for GitHub MCP server)"
-else
-    log_warn "Docker not found — GitHub MCP will need Docker later"
+# Docker
+ensure_docker "$PKG_MGR"; rc=$?
+if [ "$rc" -eq 1 ]; then
+    MISSING=1
+elif [ "$rc" -eq 2 ]; then
+    SKIPPED=1
+    MISSING=1
 fi
 
 if [ "$MISSING" -eq 1 ]; then
+    if [ "$SKIPPED" -eq 1 ]; then
+        log_warn "Skipped required installs: ${SKIPPED_ITEMS[*]}"
+    fi
     log_error "Missing prerequisites. Please install them and re-run this script."
     exit 1
 fi
 
 log_info "All prerequisites satisfied."
+if [ "$SKIPPED" -eq 1 ]; then
+    log_warn "Some installs were skipped: ${SKIPPED_ITEMS[*]}"
+fi
+if [ "$OPENCLAW_OK" -ne 1 ]; then
+    log_warn "OpenClaw prerequisites missing — OpenClaw steps will be skipped."
+fi
 echo ""
 
 # ═══════════════════════════════════════════
@@ -131,16 +557,31 @@ echo ""
 
 log_step "2/$TOTAL_STEPS Installing OpenClaw..."
 
-if command -v openclaw &> /dev/null; then
-    log_info "OpenClaw already installed: $(openclaw --version 2>/dev/null || echo 'version unknown')"
+if [ "$OPENCLAW_OK" -ne 1 ]; then
+    log_warn "Skipping OpenClaw install (Node.js/npm/npx missing)."
 else
-    log_info "Installing OpenClaw via npm..."
-    npm install -g openclaw@latest
     if command -v openclaw &> /dev/null; then
-        log_info "OpenClaw installed successfully"
+        log_info "OpenClaw already installed: $(openclaw --version 2>/dev/null || echo 'version unknown')"
     else
-        log_error "openclaw not found on PATH after install"
-        log_warn "Try: export PATH=\"$(npm config get prefix)/bin:\$PATH\""
+        log_info "Installing OpenClaw via npm..."
+        if [ "$(id -u)" -eq 0 ]; then
+            npm install -g openclaw@latest
+        else
+            if ! as_root npm install -g openclaw@latest; then
+                log_warn "sudo install failed or unavailable; using user-local npm prefix"
+                mkdir -p "$HOME/.local/npm"
+                npm config set prefix "$HOME/.local/npm"
+                export PATH="$HOME/.local/npm/bin:$PATH"
+                npm install -g openclaw@latest
+            fi
+        fi
+
+        if command -v openclaw &> /dev/null; then
+            log_info "OpenClaw installed successfully"
+        else
+            log_error "openclaw not found on PATH after install"
+            log_warn "Try: export PATH=\"$(npm config get prefix)/bin:\$PATH\""
+        fi
     fi
 fi
 
@@ -157,7 +598,9 @@ echo "  This is OpenClaw's built-in setup wizard."
 echo "  Pick your AI provider and set your API key."
 echo ""
 
-if command -v openclaw &> /dev/null; then
+if [ "$OPENCLAW_OK" -ne 1 ]; then
+    log_warn "Skipping OpenClaw onboard (Node.js/npm/npx missing)."
+elif command -v openclaw &> /dev/null; then
     openclaw onboard --install-daemon || {
         log_warn "openclaw onboard exited with an error."
         log_warn "You can re-run it later: openclaw onboard --install-daemon"
@@ -214,7 +657,7 @@ echo ""
 # Step 7: GitHub MCP Server
 # ═══════════════════════════════════════════
 
-log_step "6/$TOTAL_STEPS Installing GitHub MCP Server..."
+log_step "7/$TOTAL_STEPS Installing GitHub MCP Server..."
 echo "  Source: https://github.com/github/github-mcp-server"
 echo "  Auth: GITHUB_PERSONAL_ACCESS_TOKEN"
 
@@ -288,6 +731,9 @@ echo ""
 log_step "10/$TOTAL_STEPS Deploying workspace and skills..."
 
 OPENCLAW_DIR="$HOME/.openclaw"
+OPENCLAW_JSON="$OPENCLAW_DIR/openclaw.json"
+OPENCLAW_WORKSPACE_DEFAULT="$OPENCLAW_DIR/workspace"
+OPENCLAW_WORKSPACE="$OPENCLAW_WORKSPACE_DEFAULT"
 if [ ! -d "$OPENCLAW_DIR" ]; then
     log_info "OpenClaw directory not found. Bootstrapping..."
     mkdir -p "$OPENCLAW_DIR/workspace/skills"
@@ -295,19 +741,56 @@ if [ ! -d "$OPENCLAW_DIR" ]; then
     log_info "Created $OPENCLAW_DIR"
 fi
 
+# Use configured workspace path if available
+if [ -f "$OPENCLAW_JSON" ]; then
+    OPENCLAW_WORKSPACE=$(python3 - <<'PY'
+import json
+import os
+
+path = os.environ.get("OPENCLAW_JSON")
+workspace = ""
+if path and os.path.isfile(path):
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    workspace = (
+        data.get("agents", {})
+        .get("defaults", {})
+        .get("workspace", "")
+    )
+print(workspace)
+PY
+)
+fi
+if [ -z "$OPENCLAW_WORKSPACE" ]; then
+    OPENCLAW_WORKSPACE="$OPENCLAW_WORKSPACE_DEFAULT"
+fi
+
+# Ensure workspace paths exist even if ~/.openclaw already existed
+mkdir -p "$OPENCLAW_WORKSPACE"
+mkdir -p "$OPENCLAW_WORKSPACE/skills"
+mkdir -p "$OPENCLAW_DIR/workspace"
+mkdir -p "$OPENCLAW_DIR/workspace/skills"
+
 # Deploy workspace MD files
 for mdfile in SOUL.md AGENTS.md TOOLS.md; do
     if [ -f "$AIOPS_DIR/$mdfile" ]; then
-        cp "$AIOPS_DIR/$mdfile" "$OPENCLAW_DIR/workspace/$mdfile"
-        log_info "Deployed $mdfile to workspace"
+        cp "$AIOPS_DIR/$mdfile" "$OPENCLAW_WORKSPACE/$mdfile"
+        log_info "Deployed $mdfile to $OPENCLAW_WORKSPACE"
+        if [ "$OPENCLAW_WORKSPACE" != "$OPENCLAW_DIR/workspace" ]; then
+            cp "$AIOPS_DIR/$mdfile" "$OPENCLAW_DIR/workspace/$mdfile"
+            log_info "Deployed $mdfile to $OPENCLAW_DIR/workspace"
+        fi
     fi
 done
 
 # Deploy skills
-mkdir -p "$OPENCLAW_DIR/workspace/skills"
 if [ -d "$AIOPS_DIR/workspace/skills" ]; then
-    cp -r "$AIOPS_DIR/workspace/skills/"* "$OPENCLAW_DIR/workspace/skills/" 2>/dev/null || true
-    log_info "Deployed AIOps skills to workspace"
+    cp -r "$AIOPS_DIR/workspace/skills/"* "$OPENCLAW_WORKSPACE/skills/" 2>/dev/null || true
+    log_info "Deployed AIOps skills to $OPENCLAW_WORKSPACE"
+    if [ "$OPENCLAW_WORKSPACE" != "$OPENCLAW_DIR/workspace" ]; then
+        cp -r "$AIOPS_DIR/workspace/skills/"* "$OPENCLAW_DIR/workspace/skills/" 2>/dev/null || true
+        log_info "Deployed AIOps skills to $OPENCLAW_DIR/workspace"
+    fi
 fi
 
 # Copy github-ops skill from NetClaw (if available)

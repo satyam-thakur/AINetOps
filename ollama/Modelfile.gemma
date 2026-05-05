@@ -1,0 +1,7 @@
+FROM gemma4:e2b
+
+# Force the model to use all 8 AMD vCPUs on the instance
+PARAMETER num_thread 8
+
+# Set a healthy context window for network logs and configs
+PARAMETER num_ctx 8192
