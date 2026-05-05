@@ -1,0 +1,7 @@
+FROM qwen2.5-coder:14b
+
+# Optimization 1: Maximize Compute
+PARAMETER num_thread 8
+
+# Optimization 2: Expand Memory for Network Data
+PARAMETER num_ctx 16384
