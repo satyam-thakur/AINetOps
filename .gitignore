@@ -59,3 +59,9 @@ Thumbs.db
 # -- Misc --
 netbox-docker/
 Thumbs.db
+
+--openclaw--
+openclaw/
+*.openclaw
+workspace/memory/*
+
