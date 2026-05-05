@@ -12,6 +12,7 @@ configs/generated/
 *.terraform.lock.hcl
 *.terraform/
 *.tfstate*
+*tfplan
 
 # ── Python ──
 __pycache__/
